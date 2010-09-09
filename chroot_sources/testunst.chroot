@@ -1,0 +1,5 @@
+#Testing
+deb http://ftp.de.debian.org/debian testing main non-free contrib
+
+#Unstable
+deb http://ftp.de.debian.org/debian unstable main non-free contrib

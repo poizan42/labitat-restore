@@ -1,0 +1,9 @@
+config directory for live-helper.
+Put these files into a directory named config. Place a fsarchive image in
+binary_local-includes/image-name.fsa (where image-name.fsa is the name of the
+image) and modify the path in chroot_local-includes/usr/bin/labitat-restore.sh
+from /live/image/labitat-0.1.fsa to /live/image/image-name.fsa if needed.
+
+Then from the parent directory run
+	lh build
+And your image is ready
