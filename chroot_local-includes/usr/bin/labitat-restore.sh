@@ -1,14 +1,24 @@
-#!/bin/sh
-if [[ $(id -u) != 0 ]]; then
+#!/bin/bash
+if [[ "$(id -u)" != 0 ]]; then
 	exec sudo "$0"
 fi
+
+function mkpartforce()
+{
+	destdev="$1"
+	shift
+	if ! parted --script "$destdev" mkpart -- "$@"; then
+		parted "$destdev" mkpart -- "$@" yes
+	fi
+	return $?
+}
 
 #TODO: needs errorhandling everywhere...
 #VERSION="$(cat /etc/labrestore.ver)"
 #IMGVER=""
 TABLEFMT=msdos
 swapoff -a
-echo "Welcome to labitat-restore script v0.1"
+echo "Welcome to labitat-restore script v0.2"
 echo -n "Enter device to restore to (>5GB required) [/dev/sda]: "
 read destdev
 if [[ "$destdev" == "" ]]; then
@@ -18,17 +28,52 @@ if [[ ! -b "$destdev" ]]; then
 	echo "$destdev is not a block device!"
 	exit
 fi
-#TODO: check if value is valid.
-#TODO: allow size to be given in GB - note that there is a bug in parted that
+# note: there is a bug in parted that
 #      will make it allocate the wrong size when specifying the end of a
 #      partition relative to end of disk in GB
 # Another note: parted uses SI prefixes - so 1GB = 1000M
 # (when it works correctly at least)
-echo -n "Enter swap size{K,M} [1024M]: "
-read swapsize
-if [[ "$swapsize" == "" ]]; then
-	swapsize=1024M
-fi
+# Let's just give sizes to parted in bytes and calculate the correct size
+# ourself
+ok=0
+while [[ $ok == 0 ]]; do
+	echo -n "Enter swap size{B,K,M,G,T} [1G]: "
+	read swapsize
+	if [[ "$swapsize" == "" ]]; then
+		swapsize=1G
+	fi
+	unit="$(echo "$swapsize" | sed -re 's/^[0-9]+//')"
+	swapsize="$(echo "$swapsize" | sed -re 's/^([0-9]+).*/\1/')"
+	if [[ "$swapsize" == "" ]]; then
+		echo "Invalid value \"$unit\""
+		continue
+	fi
+	case "$unit" in
+		T)
+			swapsize=$[$swapsize*(1024**4)]
+		;;
+		G)
+			swapsize=$[$swapsize*(1024**3)]
+		;;
+		M)
+			swapsize=$[$swapsize*(1024**2)]
+		;;
+		K)
+			swapsize=$[$swapsize*1024]
+		;;
+		B)
+		;;
+		*)
+			echo "Unknown unit \"$unit\". Use one of B,K,M,G or T."
+			continue
+		;;
+	esac
+	ok=1
+done
+unset ok
+#echo "\$swapsize=$swapsize" 
+#exit
+
 echo "WARNING: continuing will DESTROY ALL DATA on $destdev"
 echo -n "Write OK if you want to continue: "
 read isok
@@ -36,9 +81,10 @@ if [[ "$isok" != "OK" ]]; then
 	exit
 fi
 echo "Writing partition table"
+embedareasize=$[1024**2]
 parted --script "$destdev" mktable $TABLEFMT
-parted --script "$destdev" mkpartfs -- p ext2 0 -$swapsize
-parted --script "$destdev" mkpartfs -- p linux-swap -$swapsize -1s
+mkpartforce "$destdev" p ext2 ${embedareasize}B -${swapsize}B
+mkpartforce "$destdev" p linux-swap -${swapsize}B -1s
 echo "Formatting swap"
 sleep 5 # give the kernel a chance to reload the partition table
 #TODO: is there a better way to do this? sync is not helping. Maybe just asking
